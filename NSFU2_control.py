@@ -3,6 +3,9 @@ import cv2
 import numpy as np
 import pydirectinput
 from mss import MSS
+import threading
+
+from torch._C._jit_tree_views import While
 
 sct = MSS()
 ACTION_INTERVAL = 1
@@ -13,6 +16,8 @@ monitor = {
     "width": 800,
     "height": 625,
 }
+
+
 
 quit_keys = [ord("q"), ord("Q")]
 
@@ -41,27 +46,37 @@ def action(action_number):
 print('Starting in 3 seconds...')
 time.sleep(3)
 
-start = time.perf_counter()
 
-while True:
-    frame = np.array(sct.grab(monitor))
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-    small = cv2.resize(frame, (400, 313))
-    cv2.imshow("NSFU2 View", small)
+def action_chooser():
+    start = time.perf_counter()
 
-    pydirectinput.keyDown('w')
+    while True:
+        pydirectinput.keyDown('w')
 
-    elapsed = time.perf_counter() - start
-    remaining = ACTION_INTERVAL - elapsed
+        elapsed = time.perf_counter() - start
+        remaining = ACTION_INTERVAL - elapsed
 
-    print(f"Remaining: {remaining}")
+        print(f"Remaining: {remaining}")
 
-    if remaining <= 0.2:
-        start = time.perf_counter()
-        action(np.random.randint(2, 5))
+        if remaining <= 0.2:
+            start = time.perf_counter()
+            action(np.random.randint(2, 5))
 
-    if cv2.waitKey(1) & 0xFF in quit_keys:
-        break
+def screen_capture():
+
+    while True:
+        frame = np.array(sct.grab(monitor))
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        small = cv2.resize(frame, (400, 313))
+        cv2.imshow("NSFU2 View", small)
+
+        if cv2.waitKey(1) & 0xFF in quit_keys:
+            break
+
+action_thread = threading.Thread(target=action_chooser)
+capture_thread = threading.Thread(target=screen_capture)
+capture_thread.start()
+action_thread.start()
 
 cv2.destroyAllWindows()
 pydirectinput.keyUp('w')
