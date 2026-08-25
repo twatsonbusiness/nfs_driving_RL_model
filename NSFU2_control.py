@@ -4,8 +4,7 @@ import numpy as np
 import pydirectinput
 from mss import MSS
 import threading
-
-from torch._C._jit_tree_views import While
+import random
 
 sct = MSS()
 ACTION_INTERVAL = 1
@@ -20,6 +19,30 @@ monitor = {
 
 
 quit_keys = [ord("q"), ord("Q")]
+
+def steering_adjustment(action_number):
+    time_short = 0.05
+    time_long = 0.15
+    match action_number:
+        case 0:
+            pydirectinput.keyDown('a')
+            time.sleep(time_long)
+            pydirectinput.keyUp('a')
+        case 1:
+            pydirectinput.keyDown('a')
+            time.sleep(time_short)
+            pydirectinput.keyUp('a')
+        case 3:
+            release_steering()
+            time.sleep(1)
+        case 4:
+            pydirectinput.keyDown('d')
+            time.sleep(time_short)
+            pydirectinput.keyUp('d')
+        case 5:
+            pydirectinput.keyDown('d')
+            time.sleep(time_long)
+            pydirectinput.keyUp('d')
 
 def release_steering():
     pydirectinput.keyUp('a')
@@ -60,7 +83,7 @@ def action_chooser():
 
         if remaining <= 0.2:
             start = time.perf_counter()
-            action(np.random.randint(2, 5))
+            steering_adjustment(np.random.randint(0, 5))
 
 def screen_capture():
 
