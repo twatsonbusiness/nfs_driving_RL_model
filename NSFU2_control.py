@@ -24,11 +24,11 @@ def steering_adjustment(action_number):
     time_short = 0.05
     time_long = 0.15
     match action_number:
-        case 0:
+        case 1:
             pydirectinput.keyDown('a')
             time.sleep(time_long)
             pydirectinput.keyUp('a')
-        case 1:
+        case 2:
             pydirectinput.keyDown('a')
             time.sleep(time_short)
             pydirectinput.keyUp('a')
@@ -92,6 +92,8 @@ def screen_capture():
         frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
         small = cv2.resize(frame, (400, 313))
         cv2.imshow("NSFU2 View", small)
+        speedometer = frame[515:550, 700:775]
+        cv2.imshow("Speedometer", speedometer)
 
         if cv2.waitKey(1) & 0xFF in quit_keys:
             break
