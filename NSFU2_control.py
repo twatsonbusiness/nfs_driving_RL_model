@@ -4,7 +4,7 @@ import numpy as np
 import pydirectinput
 from mss import MSS
 import threading
-import random
+from pynput import keyboard
 import pytesseract
 pytesseract.pytesseract.tesseract_cmd = (r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
@@ -17,6 +17,21 @@ monitor = {
     "width": 800,
     "height": 625,
 }
+
+stop_event = threading.Event()
+def abort(key):
+    exit_keys = ['q', '-', '0']
+    try:
+        if key.char in exit_keys:
+            stop_event.set()
+            release_steering()
+            release_throttle()
+            print('\n\nABORTING...\n\n')
+    except AttributeError:
+        pass
+
+listener = keyboard.Listener(on_press=abort)
+listener.start()
 
 
 
@@ -88,7 +103,7 @@ def read_speed(speedometer):
 def action_chooser():
     start = time.perf_counter()
 
-    while True:
+    while not stop_event.is_set():
         pydirectinput.keyDown('w')
 
         elapsed = time.perf_counter() - start
@@ -103,7 +118,7 @@ def action_chooser():
 def screen_capture():
     frame_count =  0
 
-    while True:
+    while not stop_event.is_set():
         frame_count += 1
         frame = np.array(sct.grab(monitor))
         frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
@@ -114,21 +129,21 @@ def screen_capture():
         if frame_count % 60 == 0:
             read_speed_thread = threading.Thread(target=read_speed, args=(speedometer,))
             read_speed_thread.start()
-
-        if cv2.waitKey(1) & 0xFF in quit_keys:
-            break
+        cv2.waitKey(1)
 
 action_thread = threading.Thread(target=action_chooser)
 capture_thread = threading.Thread(target=screen_capture)
 capture_thread.start()
 action_thread.start()
 
-cv2.destroyAllWindows()
+capture_thread.join()
+action_thread.join()
+
+listener.stop()
+
 pydirectinput.keyUp('w')
+release_throttle()
+release_steering()
 
-
-
-
-
-
-
+cv2.destroyAllWindows()
+print('End of program.')
