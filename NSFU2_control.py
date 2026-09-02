@@ -71,6 +71,19 @@ def action(action_number):
 print('Starting in 3 seconds...')
 time.sleep(3)
 
+def read_speed(speedometer):
+    gray_speedometer = cv2.cvtColor(
+        speedometer, cv2.COLOR_BGR2GRAY
+    )
+    speed = pytesseract.image_to_string(
+        gray_speedometer, config="--psm 7 -c tessedit_char_whitelist=0123456789"
+
+    )
+    if int(speed) > 120:
+        return False
+    else:
+        print(f"Speed: {speed}")
+        return True
 
 def action_chooser():
     start = time.perf_counter()
@@ -81,29 +94,26 @@ def action_chooser():
         elapsed = time.perf_counter() - start
         remaining = ACTION_INTERVAL - elapsed
 
-        print(f"Remaining: {remaining}")
+        print(f"Remaining: {remaining:.2f}")
 
         if remaining <= 0.2:
             start = time.perf_counter()
             steering_adjustment(np.random.randint(1, 6))
 
 def screen_capture():
+    frame_count =  0
 
     while True:
+        frame_count += 1
         frame = np.array(sct.grab(monitor))
         frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
         small = cv2.resize(frame, (400, 313))
         cv2.imshow("NSFU2 View", small)
         speedometer = frame[515:550, 700:775]
         cv2.imshow("Speedometer", speedometer)
-        gray_speedometer = cv2.cvtColor(
-            speedometer, cv2.COLOR_BGR2GRAY
-        )
-        speed = pytesseract.image_to_string(
-            gray_speedometer, config="--psm 7 -c tessedit_char_whitelist=0123456789"
-
-        )
-        print(f"Speed: {speed}")
+        if frame_count % 60 == 0:
+            read_speed_thread = threading.Thread(target=read_speed, args=(speedometer,))
+            read_speed_thread.start()
 
         if cv2.waitKey(1) & 0xFF in quit_keys:
             break
