@@ -5,6 +5,8 @@ import pydirectinput
 from mss import MSS
 import threading
 import random
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = (r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
 sct = MSS()
 ACTION_INTERVAL = 1
@@ -83,7 +85,7 @@ def action_chooser():
 
         if remaining <= 0.2:
             start = time.perf_counter()
-            steering_adjustment(np.random.randint(0, 5))
+            steering_adjustment(np.random.randint(1, 6))
 
 def screen_capture():
 
@@ -94,6 +96,14 @@ def screen_capture():
         cv2.imshow("NSFU2 View", small)
         speedometer = frame[515:550, 700:775]
         cv2.imshow("Speedometer", speedometer)
+        gray_speedometer = cv2.cvtColor(
+            speedometer, cv2.COLOR_BGR2GRAY
+        )
+        speed = pytesseract.image_to_string(
+            gray_speedometer, config="--psm 7 -c tessedit_char_whitelist=0123456789"
+
+        )
+        print(f"Speed: {speed}")
 
         if cv2.waitKey(1) & 0xFF in quit_keys:
             break
