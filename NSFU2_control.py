@@ -69,19 +69,24 @@ def release_throttle():
     pydirectinput.keyUp('w')
     pydirectinput.keyUp('s')
 
-def action(action_number):
-    release_steering()
+def brake_action(action_number):
+    time1 = 0.25
+    time2 = 0.5
+    time3 = 0.75
+    time4 = 1
 
-    if action_number == 0:
-        pydirectinput.keyDown('w')
-    elif action_number == 1:
-        pydirectinput.keyDown('s')
-    elif action_number == 2:
-        pydirectinput.keyDown('a')
-    elif action_number == 3:
-        pydirectinput.keyDown('d')
-    elif action_number >= 4:
-        release_steering()
+    pydirectinput.keyDown('s')
+    match action_number:
+        case 1:
+            time.sleep(time1)
+        case 2:
+            time.sleep(time2)
+        case 3:
+            time.sleep(time3)
+        case 4:
+            time.sleep(time4)
+    pydirectinput.keyUp('s')
+    pydirectinput.keyDown('w')
 
 print('Starting in 3 seconds...')
 time.sleep(3)
