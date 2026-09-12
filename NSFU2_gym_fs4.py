@@ -8,17 +8,22 @@ import threading
 from pynput import keyboard
 from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback, CallbackList
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 import gymnasium as gym
 from gymnasium import spaces
 import pytesseract
 from pathlib import Path
 
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+
 pytesseract.pytesseract.tesseract_cmd = (r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
-CHECKPOINT_DIR = Path(__file__).resolve().parent / "checkpoints"
+CHECKPOINT_DIR = Path(__file__).resolve().parent / "checkpoints_fs4"
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_SPEED = 250.0
+
 
 
 class NFSU2Env(gym.Env):
@@ -52,10 +57,10 @@ class NFSU2Env(gym.Env):
 
         self.observation_space = spaces.Dict({
             "image": spaces.Box(
-            low=0, high=255, shape=(1, 84, 84), dtype=np.uint8
+            low=0, high=255, shape=(4, 84, 84), dtype=np.uint8
             ),
             "speed": spaces.Box(
-                low=0.0, high=1.0, shape=(1,), dtype=np.float32
+                low=0.0, high=1.0, shape=(4,), dtype=np.float32
             ),
         })
         self.last_speed = 0
@@ -228,6 +233,17 @@ class NFSU2Env(gym.Env):
         self.sct.close()
         cv2.destroyAllWindows()
 
+def make_stacked_env():
+    def make_env():
+        return Monitor(NFSU2Env())
+    env = DummyVecEnv([make_env])
+    env = VecFrameStack(
+        env, n_stack=4, channels_order={
+            "image":"first",
+            "speed":"last",
+        },
+    )
+    return env
 
 
 if __name__ == "__main__":
@@ -283,7 +299,7 @@ if __name__ == "__main__":
     try:
         listener = keyboard.Listener(on_press=abort)
         listener.start()
-        env = NFSU2Env()
+        env = make_stacked_env()
         checkpoint_callback = CheckpointCallback(
             save_freq=50_000,
             save_path=CHECKPOINT_DIR,
@@ -313,7 +329,7 @@ if __name__ == "__main__":
             model = DQN(
                 "MultiInputPolicy",
                 env,
-                buffer_size=50_000,
+                buffer_size=20_000,
                 learning_starts=5_000,
                 batch_size=32,
                 tensorboard_log=str(CHECKPOINT_DIR/"tensorboard"),
