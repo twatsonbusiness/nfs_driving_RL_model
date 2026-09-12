@@ -11,14 +11,18 @@ from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback,
 import gymnasium as gym
 from gymnasium import spaces
 import pytesseract
-
-from NSFU2_control import stop_event
+from pathlib import Path
 
 pytesseract.pytesseract.tesseract_cmd = (r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
+CHECKPOINT_DIR = Path(__file__).resolve().parent / "checkpoints"
+CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+MAX_SPEED = 250.0
+
 
 class NFSU2Env(gym.Env):
-    metadata = {"render_models": ['human']}
+    metadata = {"render_modes": ["human"]}
 
     def __init__(self):
         super().__init__()
@@ -55,6 +59,7 @@ class NFSU2Env(gym.Env):
             ),
         })
         self.last_speed = 0
+        self.last_speed_chances = 5
         self.stuck_steps = 0
         self.episode_steps = 0
 
@@ -72,6 +77,7 @@ class NFSU2Env(gym.Env):
 
         match action:
             case 0:
+                pydirectinput.keyDown('w')
                 pydirectinput.keyDown('altleft')
             case 1:
                 pydirectinput.keyDown('s')
@@ -115,7 +121,7 @@ class NFSU2Env(gym.Env):
 
         return {
             "image":gray,
-            "speed":np.array([np.clip(speed/200.0, 0.0, 1.0)], dtype=np.float32)
+            "speed":np.array([np.clip(speed/MAX_SPEED, 0.0, 1.0)], dtype=np.float32)
         }
 
 
@@ -136,12 +142,18 @@ class NFSU2Env(gym.Env):
         try:
             speed = int(text)
         except ValueError:
-            return self.last_speed
+            speed = None
 
-        if speed > 200 or speed < 0:
-            return self.last_speed
+        if speed is not None and 0 <= speed <= int(MAX_SPEED):
+            self.last_speed_chances = 5
+            return speed
 
-        return speed
+        self.last_speed_chances -= 1
+
+        if self.last_speed_chances <= 0:
+            return self.last_speed/2
+
+        return self.last_speed
 
     def restart_race(self):
         self.release_all()
@@ -160,6 +172,7 @@ class NFSU2Env(gym.Env):
         self.episode_steps = 0
         self.stuck_steps = 0
         self.last_speed = 0
+        self.last_speed_chances = 5
 
         self.restart_race()
 
@@ -170,7 +183,7 @@ class NFSU2Env(gym.Env):
         return observation, {}
 
     def calculate_reward(self, speed):
-        speed_reward = speed/200.0
+        speed_reward = speed/MAX_SPEED
         acceleration = speed - self.last_speed
         if acceleration>0:
             acceleration_reward = acceleration/50
@@ -217,11 +230,32 @@ class NFSU2Env(gym.Env):
         cv2.waitKey(1)
     def close(self):
         self.release_all()
+        self.sct.close()
         cv2.destroyAllWindows()
 
 
 
 if __name__ == "__main__":
+    def find_latest_checkpoint():
+        candidates = []
+        for model_path in CHECKPOINT_DIR.glob("nfsu2_*_steps.zip"):
+            match = re.fullmatch(r"nfsu2_(\d+)_steps\.zip", model_path.name)
+
+            if not match:
+                continue
+
+            steps = int(match.group(1))
+            replay_path = (CHECKPOINT_DIR / f"nfsu2_replay_buffer_{steps}_steps.pkl")
+
+            if replay_path.exists():
+                candidates.append((steps, model_path, replay_path))
+
+        if not candidates:
+            return None, None
+
+        _, model_path, replay_path = max(candidates, key=lambda  item: item[0])
+
+        return model_path, replay_path
 
     stop_event = threading.Event()
 
@@ -233,8 +267,7 @@ if __name__ == "__main__":
         except AttributeError:
             pass
 
-    listener = keyboard.Listener(on_press=abort)
-    listener.start()
+
 
     class StopTrainingCallback(BaseCallback):
         def __init__(self, stop_event):
@@ -247,43 +280,64 @@ if __name__ == "__main__":
                 return False
             return True
 
-    env = NFSU2Env()
 
-    checkpoint_callback = CheckpointCallback(
-        save_freq=5000,
-        save_path="./checkpoints/",
-        name_prefix='nfsu2',
-        save_replay_buffer=True
-    )
-    stop_callback = StopTrainingCallback(stop_event)
-    callbacks = CallbackList([
-        checkpoint_callback, stop_callback
-    ])
     resume = False
+    model = None
+    env = None
+    listener = None
     try:
+        listener = keyboard.Listener(on_press=abort)
+        listener.start()
+        env = NFSU2Env()
+        checkpoint_callback = CheckpointCallback(
+            save_freq=50_000,
+            save_path=CHECKPOINT_DIR,
+            name_prefix='nfsu2',
+            save_replay_buffer=True,
+            verbose=2
+        )
+        stop_callback = StopTrainingCallback(stop_event)
+        callbacks = CallbackList([
+            checkpoint_callback, stop_callback
+        ])
+
+        model_path, replay_path = find_latest_checkpoint()
+        resume = model_path is not None
         if resume:
-            model = DQN.load(
-                "./checkpoints/nfsu2_50000_steps.zip",
-                env=env
-            )
-            model.load_replay_buffer("./checkpoints/nfsu2_50000_steps.pkl", )
+            print(f'Resuming Training from {model_path}')
+            model = DQN.load(model_path,env=env)
+            if replay_path.exists():
+                model.load_replay_buffer(replay_path)
+            else:
+                print(f"Warning: replay buffer missing: {replay_path}")
             model.learn(
                 total_timesteps=1_000_000, reset_num_timesteps=False, callback=callbacks
             )
         else:
+            print('Starting New Model...')
             model = DQN(
                 "MultiInputPolicy",
                 env,
+                buffer_size=50_000,
+                learning_starts=5_000,
+                batch_size=32,
+                tensorboard_log=str(CHECKPOINT_DIR/"tensorboard"),
                 verbose=1,
             )
 
-            model.learn(total_timesteps=1_000_000, callback=callbacks)
+            model.learn(total_timesteps=1_000_000, callback=callbacks, reset_num_timesteps=(not resume), progress_bar=True)
+
+    except KeyboardInterrupt:
+        print('Training Interrupted.')
 
     finally:
         print('Saving current state...')
-        model.save("./checkpoints/nfsu2_manual")
-        model.save_replay_buffer("./checkpoints/nfsu2_manual_replay_buffer.pkl")
-
-
-
+        if model is not None:
+            steps = model.num_timesteps
+            model.save(CHECKPOINT_DIR / f"nfsu2_{steps}_steps")
+            model.save_replay_buffer(CHECKPOINT_DIR / f"nfsu2_replay_buffer_{steps}_steps.pkl")
+        if env is not None:
+            env.close()
+        if listener is not None:
+            listener.stop()
 
