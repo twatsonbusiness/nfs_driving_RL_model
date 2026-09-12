@@ -38,7 +38,7 @@ class NFSU2Env(gym.Env):
             "width": 800,
             "height": 625,
         }
-        self.step_time = 0.1
+        self.step_time = 0.05
 
         """
         Actions:
@@ -67,6 +67,7 @@ class NFSU2Env(gym.Env):
         self.last_speed_chances = 5
         self.stuck_steps = 0
         self.episode_steps = 0
+        self.action_num = 0
 
         self.max_episode_steps = 600
 
@@ -80,32 +81,47 @@ class NFSU2Env(gym.Env):
     def set_action(self, action):
         self.release_all()
 
+        self.action_num +=1
+
+        if self.action_num % 500 == 0:
+            print(f'Action #: {self.action_num}')
+
         match action:
             case 0:
                 pydirectinput.keyDown('w')
                 pydirectinput.keyDown('altleft')
+                print('NITROUS')
             case 1:
                 pydirectinput.keyDown('s')
                 pydirectinput.keyDown('a')
+                print('BRAKE LEFT')
             case 2:
                 pydirectinput.keyDown('s')
+                print('BRAKE')
             case 3:
                 pydirectinput.keyDown('s')
                 pydirectinput.keyDown('d')
+                print('BRAKE RIGHT')
             case 4:
                 pydirectinput.keyDown('a')
+                print('RIGHT')
             case 5:
+                print('COAST')
                 pass
             case 6:
                 pydirectinput.keyDown('d')
+                print('RIGHT')
             case 7:
                 pydirectinput.keyDown('w')
                 pydirectinput.keyDown('a')
+                print('GAS LEFT')
             case 8:
                 pydirectinput.keyDown('w')
+                print('GAS')
             case 9:
                 pydirectinput.keyDown('w')
                 pydirectinput.keyDown('d')
+                print('GAS RIGHT')
     def capture_frame(self):
         frame = np.array(self.sct.grab(self.monitor))
 
@@ -151,18 +167,25 @@ class NFSU2Env(gym.Env):
 
         if speed is not None and 0 <= speed <= int(MAX_SPEED):
             self.last_speed_chances = 5
+            print(f"Speed: {speed}")
             return speed
 
         self.last_speed_chances -= 1
 
         if self.last_speed_chances <= 0:
+            print(f"Last Speed /2: {self.last_speed/2}")
+            print(f"Last Speed Chances: {self.last_speed_chances}")
             return self.last_speed/2
 
+        print(f"Last Speed: {self.last_speed}")
+        print(f"Last Speed Chances: {self.last_speed_chances}")
         return self.last_speed
 
     def restart_race(self):
         self.release_all()
         pydirectinput.keyDown('r')
+        print("RESTART")
+        pydirectinput.keyUp('r')
 
         return True
     def reset(self, seed=None, options=None):
@@ -207,6 +230,9 @@ class NFSU2Env(gym.Env):
         speed = self.read_speed(frame)
         observation = self.get_observation(frame, speed)
         reward = self.calculate_reward(speed)
+        if self.episode_steps % 100 == 0:
+            print(f"Steps: {self.episode_steps} / {self.max_episode_steps}")
+
         if speed < 3:
             self.stuck_steps += 1
         else:
