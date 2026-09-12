@@ -53,7 +53,7 @@ class NFSU2Env(gym.Env):
         8 = forward
         9 = forward + right
         """
-        self.action_space = spaces.Discrete(10)
+        self.action_space = spaces.Discrete(7)
 
         self.observation_space = spaces.Dict({
             "image": spaces.Box(
@@ -88,40 +88,29 @@ class NFSU2Env(gym.Env):
 
         match action:
             case 0:
-                pydirectinput.keyDown('w')
-                pydirectinput.keyDown('altleft')
-                print('NITROUS')
-            case 1:
-                pydirectinput.keyDown('s')
-                pydirectinput.keyDown('a')
-                print('BRAKE LEFT')
-            case 2:
-                pydirectinput.keyDown('s')
-                print('BRAKE')
-            case 3:
-                pydirectinput.keyDown('s')
-                pydirectinput.keyDown('d')
-                print('BRAKE RIGHT')
-            case 4:
-                pydirectinput.keyDown('a')
-                print('RIGHT')
-            case 5:
                 print('COAST')
                 pass
-            case 6:
-                pydirectinput.keyDown('d')
-                print('RIGHT')
-            case 7:
+            case 1:
+                pydirectinput.keyDown('w')
+                print('GAS')
+            case 2:
                 pydirectinput.keyDown('w')
                 pydirectinput.keyDown('a')
                 print('GAS LEFT')
-            case 8:
-                pydirectinput.keyDown('w')
-                print('GAS')
-            case 9:
+            case 3:
                 pydirectinput.keyDown('w')
                 pydirectinput.keyDown('d')
                 print('GAS RIGHT')
+            case 4:
+                pydirectinput.keyDown('a')
+                print('LEFT')
+            case 5:
+                pydirectinput.keyDown('d')
+                print('RIGHT')
+            case 6:
+                pydirectinput.keyDown('s')
+                print('BRAKE')
+
     def capture_frame(self):
         frame = np.array(self.sct.grab(self.monitor))
 
