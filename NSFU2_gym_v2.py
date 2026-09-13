@@ -15,6 +15,15 @@ from gymnasium import spaces
 import pytesseract
 from pathlib import Path
 
+import torch
+
+print("PyTorch:", torch.__version__)
+print("PyTorch CUDA:", torch.version.cuda)
+print("CUDA available:", torch.cuda.is_available())
+
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
 pytesseract.pytesseract.tesseract_cmd = (r"C:\Program Files\Tesseract-OCR\tesseract.exe")
@@ -24,7 +33,10 @@ CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_SPEED = 250.0
 
-
+CAPTURE_WIDTH = 800
+CAPTURE_HEIGHT = 600
+IMAGE_WIDTH = CAPTURE_WIDTH/5
+IMAGE_HEIGHT = CAPTURE_HEIGHT/5
 
 class NFSU2Env(gym.Env):
     metadata = {"render_modes": ["human"]}
@@ -35,10 +47,10 @@ class NFSU2Env(gym.Env):
         self.monitor = {
             "top": 0,
             "left": 0,
-            "width": 800,
-            "height": 625,
+            "width": CAPTURE_WIDTH,
+            "height": CAPTURE_HEIGHT,
         }
-        self.step_time = 0.05
+        self.step_time = 0.1
 
         """
         Actions:
@@ -57,19 +69,20 @@ class NFSU2Env(gym.Env):
 
         self.observation_space = spaces.Dict({
             "image": spaces.Box(
-            low=0, high=255, shape=(4, 84, 84), dtype=np.uint8
+            low=0, high=255, shape=(1, IMAGE_HEIGHT, IMAGE_WIDTH), dtype=np.uint8
             ),
             "speed": spaces.Box(
-                low=0.0, high=1.0, shape=(4,), dtype=np.float32
+                low=0.0, high=1.0, shape=(1,), dtype=np.float32
             ),
         })
         self.last_speed = 0
         self.last_speed_chances = 5
         self.stuck_steps = 0
         self.episode_steps = 0
-        self.action_num = 0
+        self.speed_increase_steps = 0
+        self.last_action = 1
 
-        self.max_episode_steps = 600
+        self.max_episode_steps = 3000
 
     def release_all(self):
         pydirectinput.keyUp('w')
@@ -116,9 +129,9 @@ class NFSU2Env(gym.Env):
     def get_observation(self, frame=None, speed=None):
         if frame is None:
             frame = self.capture_frame()
-        gameplay = frame[40:500, 40:760]
+        gameplay = frame
         gray = cv2.cvtColor(gameplay, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
+        gray = cv2.resize(gray, (IMAGE_WIDTH, IMAGE_HEIGHT), interpolation=cv2.INTER_AREA)
         gray = gray[np.newaxis, :, :].astype(np.uint8)
 
         if speed is None:
@@ -168,8 +181,10 @@ class NFSU2Env(gym.Env):
     def restart_race(self):
         self.release_all()
         pydirectinput.keyDown('r')
-        print("RESTART")
+        print("\n\nRESTART\n\n")
         pydirectinput.keyUp('r')
+        time.sleep(2)
+
 
         return True
     def reset(self, seed=None, options=None):
@@ -180,6 +195,8 @@ class NFSU2Env(gym.Env):
         self.stuck_steps = 0
         self.last_speed = 0
         self.last_speed_chances = 5
+        self.speed_increase_steps = 0
+        self.last_action = 1
 
         self.restart_race()
 
@@ -189,21 +206,39 @@ class NFSU2Env(gym.Env):
         observation = self.get_observation(frame, speed)
         return observation, {}
 
-    def calculate_reward(self, speed):
+    def calculate_reward(self, speed, action, last_action):
         speed_reward = speed/MAX_SPEED
         acceleration = speed - self.last_speed
-        if acceleration>0:
-            acceleration_reward = acceleration/50
-        elif acceleration<0:
+
+        if acceleration<0:
             acceleration_reward = acceleration/20
+            self.speed_increase_steps = self.speed_increase_steps/2
         else:
-            acceleration_reward = 0.0
+            self.speed_increase_steps += 1
+            acceleration_reward = acceleration/MAX_SPEED
 
-        reward = (speed_reward + acceleration_reward)
 
-        if speed < 5:
-            reward -= 0.25
+        if 0 < action < 4: #if action isn't using GAS
+            action_reward = -0.02
+        else:
+            if action > 1:
+                action_reward = 0.02
+            else:
+                action_reward = 0.05
 
+        if (last_action == 2 and action == 3) or (last_action == 3 and action == 2): #minor gas turn penalty
+            steering_reward = -0.02
+        elif (last_action == 4 and action == 5) or (last_action == 5 and action == 4): #major turn penalty
+            steering_reward = -0.05
+        elif (last_action == 1 and action == 6) or (last_action == 6 and action == 1): #minor brake/gas penalty
+            steering_reward = -0.02
+        else:
+            steering_reward = 0.01
+
+
+        reward = float(speed_reward + acceleration_reward + (self.speed_increase_steps/1000.0) + action_reward + steering_reward)
+
+        print(f"Reward: {reward}")
         return float(reward)
 
     def step(self, action):
@@ -213,9 +248,11 @@ class NFSU2Env(gym.Env):
         frame = self.capture_frame()
         speed = self.read_speed(frame)
         observation = self.get_observation(frame, speed)
-        reward = self.calculate_reward(speed)
-        if self.episode_steps % 100 == 0:
-            print(f"Steps: {self.episode_steps} / {self.max_episode_steps}")
+        reward = self.calculate_reward(speed, int(action), self.last_action)
+        self.last_action = int(action)
+
+        if self.episode_steps % 250 == 0:
+            print(f"\n\nSteps: {self.episode_steps} / {self.max_episode_steps}\n\n")
 
         if speed < 3:
             self.stuck_steps += 1
@@ -326,7 +363,7 @@ if __name__ == "__main__":
         resume = model_path is not None
         if resume:
             print(f'Resuming Training from {model_path}')
-            model = DQN.load(model_path,env=env)
+            model = DQN.load(model_path,env=env, device='cuda')
             if replay_path.exists():
                 model.load_replay_buffer(replay_path)
             else:
@@ -342,7 +379,15 @@ if __name__ == "__main__":
                 buffer_size=20_000,
                 learning_starts=5_000,
                 batch_size=32,
+                gamma=0.995,
+                train_freq=4,
+                gradient_steps=2,
+                target_update_interval=5_000,
+                exploration_fraction=0.1,
+                exploration_initial_eps=1.0,
+                exploration_final_eps=0.02,
                 tensorboard_log=str(CHECKPOINT_DIR/"tensorboard"),
+                device='cuda',
                 verbose=1,
             )
 
