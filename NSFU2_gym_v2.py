@@ -28,7 +28,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
 pytesseract.pytesseract.tesseract_cmd = (r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
-CHECKPOINT_DIR = Path(__file__).resolve().parent / "checkpoints_fs4"
+CHECKPOINT_DIR = Path(__file__).resolve().parent / "checkpoints_v2"
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_SPEED = 250.0
@@ -69,7 +69,7 @@ class NFSU2Env(gym.Env):
 
         self.observation_space = spaces.Dict({
             "image": spaces.Box(
-            low=0, high=255, shape=(1, IMAGE_HEIGHT, IMAGE_WIDTH), dtype=np.uint8
+            low=0, high=255, shape=(1, int(IMAGE_HEIGHT), int(IMAGE_WIDTH)), dtype=np.uint8
             ),
             "speed": spaces.Box(
                 low=0.0, high=1.0, shape=(1,), dtype=np.float32
@@ -82,7 +82,7 @@ class NFSU2Env(gym.Env):
         self.speed_increase_steps = 0
         self.last_action = 1
 
-        self.max_episode_steps = 3000
+        self.max_episode_steps = 500
 
     def release_all(self):
         pydirectinput.keyUp('w')
@@ -131,7 +131,7 @@ class NFSU2Env(gym.Env):
             frame = self.capture_frame()
         gameplay = frame
         gray = cv2.cvtColor(gameplay, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, (IMAGE_WIDTH, IMAGE_HEIGHT), interpolation=cv2.INTER_AREA)
+        gray = cv2.resize(gray, (int(IMAGE_WIDTH), int(IMAGE_HEIGHT)), interpolation=cv2.INTER_AREA)
         gray = gray[np.newaxis, :, :].astype(np.uint8)
 
         if speed is None:
@@ -198,6 +198,8 @@ class NFSU2Env(gym.Env):
         self.speed_increase_steps = 0
         self.last_action = 1
 
+        self.max_episode_steps += 250
+
         self.restart_race()
 
         frame = self.capture_frame()
@@ -250,6 +252,7 @@ class NFSU2Env(gym.Env):
         observation = self.get_observation(frame, speed)
         reward = self.calculate_reward(speed, int(action), self.last_action)
         self.last_action = int(action)
+
 
         if self.episode_steps % 250 == 0:
             print(f"\n\nSteps: {self.episode_steps} / {self.max_episode_steps}\n\n")
